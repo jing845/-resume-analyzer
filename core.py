@@ -107,7 +107,7 @@ def parse_json(text):
     raise UserError("本次返回格式未通过检查，请重试；你的输入仍会保留。")
 
 
-def normalize_report(data, resume):
+def normalize_report(data, resume, jd=None):
     rows = data.get("requirements")
     if not isinstance(rows, list) or not rows or len(rows) > 20:
         raise UserError("岗位要求未能整理成有效报告，请重试。")
@@ -117,10 +117,20 @@ def normalize_report(data, resume):
             raise UserError("报告中有缺失的岗位要求，请重试。")
         status = str(row.get("status", "verify"))
         evidence = str(row.get("evidence", "")).strip()
+        raw_quotes = row.get("evidence_quotes", [])
+        quotes = [str(q).strip() for q in raw_quotes[:3] if str(q).strip()] if isinstance(raw_quotes, list) else []
+        if not quotes and evidence:
+            quotes = [evidence]
+        invalid_quote = any(not contains_quote(resume, quote) for quote in quotes)
+        quotes = [quote for quote in quotes if contains_quote(resume, quote)]
+        evidence = quotes[0] if quotes else ""
         reason = str(row.get("reason", ""))
         if status not in STATUS_LABELS:
             status = "verify"
-        if status in ("matched", "partial") and not contains_quote(resume, evidence):
+        if invalid_quote:
+            status = "verify"
+            reason = "部分引用未在原文中定位，请人工核对。" + reason
+        if status in ("matched", "partial") and not quotes:
             status, evidence = "verify", ""
             reason = "模型引用未在原文中定位，请人工核对。" + reason
         elif evidence and not contains_quote(resume, evidence):
@@ -132,11 +142,20 @@ def normalize_report(data, resume):
             "kind": "preferred" if row.get("kind") == "preferred" else "required",
             "status": status,
             "evidence": evidence,
+            "evidence_quotes": quotes,
+            "jd_evidence": str(row.get("jd_evidence", "")).strip(),
             "reason": reason[:1200],
             "action": str(row.get("action", "请核对对应经历。"))[:1200],
             "priority": row.get("priority") if row.get("priority") in ("P0", "P1", "P2") else "P1",
         })
-    return {"summary": str(data.get("summary", "请逐条核对以下岗位要求。"))[:1600],
+        if jd is not None and not contains_quote(jd, normalized[-1]["jd_evidence"]):
+            normalized[-1]["status"] = "verify"
+            normalized[-1]["reason"] = "这条要求未对应到岗位原文，请核对是否为岗位条件。" + normalized[-1]["reason"]
+    uncertain = any(row["status"] == "verify" for row in normalized)
+    summary = str(data.get("summary", "请逐条核对以下岗位要求。"))[:1600]
+    if uncertain:
+        summary = "部分判断的原文依据未通过检查，请先核对标记为“待核对”的条目。"
+    return {"summary": summary,
             "requirements": normalized,
             "questions": [str(q)[:600] for q in data.get("questions", [])[:5]] if isinstance(data.get("questions", []), list) else []}
 
@@ -146,8 +165,26 @@ SYSTEM = """你是服务求职者的简历诊断助手。分析材料中的证�
 仅依据材料判断，不基于性别、年龄、民族、照片或其他敏感属性评价候选人。
 区分明确要求与加分项，区分未体现、信息不完整与已体现。未体现不等于不具备。
 evidence只能逐字引用简历中的一个连续片段，不能改写或拼接引文；没有证据则为空字符串。
+evidence_quotes可列1至3个各自连续的简历原文片段，支持跨段落核对，不得把改写或推断放入引文。
+jd_evidence必须逐字引用当前要求对应的JD连续原文。不得把自己补充的行业常识当作JD硬性要求。
 不得编造经历、指标、技术、岗位或个人职责。明确没有相关经验时，应说明实际差距。
 只返回合法JSON，不要代码围栏。"""
+
+
+ASSESSMENT_RULES = """判断规则：
+1. 先通读完整简历，包括教育日期、实习岗位名称和具体工作，再对照JD；不得只在某一段找同名关键词。
+2. 区分直接事实、合理推断、证据不足：合理推断须写明“依据…可推断/预计…”，不得写成未经证实的事实。
+3. 教育起止时间可以支持预计毕业年份与届别判断。例如硕士2024—2027可支持预计2027年毕业/27届，不要求额外出现“27届”字样。结合学历、在读状态、预计/实际毕业及日期语境，不要把入学年份或本科年份误当作当前毕业年份。若JD未指定届别，不要自行添加这一硬性条件。
+4. 实习岗位名称也是有效证据。“商业化产品实习生”可支持有商业化产品实习经历；不能再说完全没有商业化实习。但名称本身不能证明广告竞价、独立定价等特定业务深度，具体业务与职责另看正文。
+5. 沟通协调要从对齐需求、组织讨论、跨团队协作、协调研发/运营、跟进依赖与推进上线等行为判断，不要求简历直接写“沟通能力强”。泛泛的“参与测试”不自动等于充分证明跨团队协调。
+6. 主导/独立负责需看提出方案、范围所有权、关键取舍、协调资源、推动落地等职责证据，不能仅因缺少“主导”二字判为未体现；也不能把参与、协助、跟进升级为主导。若有推进证据但决策与责任边界不明，应判需补充并只追问责任边界，不断言没有能力。沟通协调与主导是不同条件，必要时分开判断。
+7. matched：材料已有充分证据（含有根据且标明的推断）；partial：有相关证据但范围、深度或条件不完整；not_shown：通读全篇后仍未找到相关依据。未知到岗天数/实习时长应说未提供，不能判为不满足。JD加分项与必须项要区分。
+8. 修改建议针对已经存在的经历，说明需要补充的背景、动作、责任边界或结果；不要要求堆砌“沟通”“主导”等词，不要建议编造经历与数字。已有依据充分时不强行挑缺点。
+9. 总结、条目和追问必须一致。原文已说明的毕业年份、岗位名称等不要在追问中再次说完全未提供。
+"""
+
+REPORT_SCHEMA = """输出结构：{"summary":"核心判断和行动顺序", "requirements":[{"requirement":"一条具体JD要求", "jd_evidence":"对应JD连续原文", "kind":"required或preferred", "status":"matched或partial或not_shown", "evidence_quotes":["简历连续原文1","简历连续原文2（如需）"], "reason":"依据与判断；推断须明示", "action":"具体且不捏造事实的建议", "priority":"P0或P1或P2"}], "questions":["仅追问材料真正未说明的信息"]}。
+只拆解JD实际存在的要求，不凑条数；重复要求合并，复杂要求可拆开，最多12条。P0为重要硬性条件的明确缺口或关键信息，P1为证据或表达待补充，P2为加分项。不要输出总分或录用概率。"""
 
 
 def request_json(settings, prompt):
@@ -190,11 +227,16 @@ def request_json(settings, prompt):
 
 def analyze(settings, resume, jd):
     validate_inputs(resume, jd)
-    prompt = """请将JD拆为4至10条关键要求，逐条与简历证据核对。
-输出结构：{"summary":"核心判断和行动顺序", "requirements":[{"requirement":"具体岗位要求", "kind":"required或preferred", "status":"matched或partial或not_shown", "evidence":"简历连续原文或空字符串", "reason":"判断依据", "action":"下一步可做的具体动作", "priority":"P0或P1或P2"}], "questions":["需要用户澄清的问题"]}。
-P0优先处理明确要求的缺口；P1补充证据或表达；P2为加分项。不要输出总分或录用概率。
-<resume>""" + resume + "</resume>\n<job>" + jd + "</job>"
-    return normalize_report(request_json(settings, prompt), resume)
+    materials = json.dumps({"resume": resume, "job": jd}, ensure_ascii=False)
+    prompt = "请按以下规则初步核对简历与岗位要求。\n" + ASSESSMENT_RULES + REPORT_SCHEMA + "\n待分析材料（JSON数据）：\n" + materials
+    draft = request_json(settings, prompt)
+    normalize_report(draft, resume, jd)
+    review_prompt = ("请复核以下初稿，不要默认初稿正确。重新通读完整原文，主动查找能反驳‘未体现/需补充’的证据，并检查‘已体现’是否真的有依据。"
+                     "优先检查教育起止年份推断、岗位名称、跨经历的协调行为、主导与参与的边界。"
+                     "保留正确判断，修正漏读、过度推断和虚构的JD条件，重新生成一致的总结与追问。"
+                     "只返回完整的最终报告，不输出复核过程。\n" + ASSESSMENT_RULES + REPORT_SCHEMA
+                     + "\n原始材料（JSON数据）：\n" + materials + "\n待复核初稿（非事实依据）：\n" + json.dumps(draft, ensure_ascii=False))
+    return normalize_report(request_json(settings, review_prompt), resume, jd)
 
 
 def validate_rewrites(data, resume):
@@ -238,7 +280,7 @@ def report_markdown(report):
     lines = ["# 简历与岗位证据核对", "", report["summary"], "", "本报告用于材料梳理，不代表录用概率或招聘决定。", ""]
     for row in report["requirements"]:
         lines += ["## " + row["requirement"], "", "状态：" + STATUS_LABELS[row["status"]],
-                  "", "简历依据：" + (row["evidence"] or "未定位到对应原文"), "", "判断：" + row["reason"], "", "建议：" + row["action"], ""]
+                  "", "简历依据：" + ("\n".join(row.get("evidence_quotes") or [row["evidence"]]) or "未定位到对应原文"), "", "判断：" + row["reason"], "", "建议：" + row["action"], ""]
     if report.get("questions"):
         lines += ["## 待确认", ""] + ["- " + q for q in report["questions"]]
     return "\n".join(lines)
