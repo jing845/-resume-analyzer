@@ -194,9 +194,10 @@ def request_json(settings, prompt):
     try:
         from openai import OpenAI
         client = OpenAI(api_key=key, base_url=base_url, timeout=45.0, max_retries=0)
+        options = {"extra_body": {"enable_thinking": False}} if model == "Qwen/Qwen3-8B" else {}
         result = client.chat.completions.create(model=model,
             messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}],
-            temperature=0.2, max_tokens=4000)
+            temperature=0.2, max_tokens=4000, **options)
         if not result.choices or not result.choices[0].message.content:
             raise UserError("模型暂未返回有效内容，请重试。")
         if result.choices[0].finish_reason == "length":
@@ -228,12 +229,13 @@ def request_json(settings, prompt):
 def analyze(settings, resume, jd):
     validate_inputs(resume, jd)
     materials = json.dumps({"resume": resume, "job": jd}, ensure_ascii=False)
-    prompt = "请按以下规则初步核对简历与岗位要求。\n" + ASSESSMENT_RULES + REPORT_SCHEMA + "\n待分析材料（JSON数据）：\n" + materials
+    coverage = "必须覆盖JD明确写出的学历、毕业年份、经历、能力与到岗条件，不得只选业务能力而遗漏届别；只覆盖JD实际存在的条件。\n"
+    prompt = "请按以下规则初步核对简历与岗位要求。\n" + coverage + ASSESSMENT_RULES + REPORT_SCHEMA + "\n待分析材料（JSON数据）：\n" + materials
     draft = request_json(settings, prompt)
     normalize_report(draft, resume, jd)
     review_prompt = ("请复核以下初稿，不要默认初稿正确。重新通读完整原文，主动查找能反驳‘未体现/需补充’的证据，并检查‘已体现’是否真的有依据。"
                      "优先检查教育起止年份推断、岗位名称、跨经历的协调行为、主导与参与的边界。"
-                     "保留正确判断，修正漏读、过度推断和虚构的JD条件，重新生成一致的总结与追问。"
+                     "保留正确判断，修正漏读、过度推断和虚构的JD条件，重新生成一致的总结与追问；补回初稿遗漏的明确学历/届别等条件。"
                      "只返回完整的最终报告，不输出复核过程。\n" + ASSESSMENT_RULES + REPORT_SCHEMA
                      + "\n原始材料（JSON数据）：\n" + materials + "\n待复核初稿（非事实依据）：\n" + json.dumps(draft, ensure_ascii=False))
     return normalize_report(request_json(settings, review_prompt), resume, jd)
