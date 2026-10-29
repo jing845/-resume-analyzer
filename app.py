@@ -45,13 +45,16 @@ def render_report(report):
     st.caption("未体现表示简历中缺少依据，不代表你没有这项能力。")
     for index, row in enumerate(report["requirements"]):
         with st.expander(f'{STATUS_LABELS[row["status"]]} · {row["requirement"]}', expanded=index == 0):
+            if row.get("jd_evidence"):
+                st.caption("岗位原文：" + row["jd_evidence"])
             if row["evidence"]:
                 st.markdown("**简历原文**")
-                st.markdown('<div class="evidence">' + html.escape(row["evidence"]) + '</div>', unsafe_allow_html=True)
-            elif row["status"] == "verify":
-                st.warning("模型引用未在简历原文定位，请人工核对。")
+                for quote in row.get("evidence_quotes") or [row["evidence"]]:
+                    st.markdown('<div class="evidence">' + html.escape(quote) + '</div>', unsafe_allow_html=True)
             else:
                 st.caption("简历中没有找到对应依据。")
+            if row["status"] == "verify":
+                st.warning("这条判断的部分原文依据未通过检查，请人工核对。")
             st.markdown("**分析**　" + row["reason"])
             st.markdown("**修改建议**　" + row["action"])
     if report.get("questions"):
@@ -89,7 +92,7 @@ if st.button("查看示例结果" if is_example else "开始评估", type="prima
         st.warning("请先勾选同意发送内容，再开始评估。")
     else:
         try:
-            with st.spinner("正在对照岗位分析简历，请稍候……"):
+            with st.spinner("正在分析并复核原文依据，请稍候……"):
                 st.session_state["live_report"] = analyze(get_settings(), resume, jd)
             st.session_state.pop("live_rewrites", None)
         except UserError as error:
