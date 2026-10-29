@@ -2,7 +2,7 @@
 import os
 
 BASE_URL = "https://api.siliconflow.cn/v1"
-MODEL = "Qwen/Qwen2.5-72B-Instruct"
+MODEL = "Qwen/Qwen2.5-7B-Instruct"
 
 
 def get_settings():
