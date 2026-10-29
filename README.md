@@ -17,7 +17,7 @@
 
 将本目录里的 app.py、core.py、config.py、samples.json、requirements.txt 和 README.md 上传或替换到原 GitHub 仓库根目录。保留 Streamlit Settings → Secrets 内的 API_KEY，不要把真实密钥提交到 GitHub。
 
-Secrets 的 API_KEY 名称与原版本一致。BASE_URL 和 MODEL 为可选配置，未设置时沿用原服务地址和模型。
+Secrets 的 API_KEY 名称与原版本一致。BASE_URL 和 MODEL 为可选配置；默认使用原硅基流动地址，以及官方价格页在 2026 年 10 月 29 日列为免费的 Qwen/Qwen2.5-7B-Instruct。已有 MODEL 配置优先，模型价格与可用性以服务商为准。
 
 更新 requirements.txt 会触发依赖重装，完成后检查 Streamlit 的运行日志和样例页面。若不希望自动更新线上，先在分支验证。
 
@@ -27,9 +27,9 @@ Secrets 的 API_KEY 名称与原版本一致。BASE_URL 和 MODEL 为可选配�
 
 ## 展示与实时工具
 
-公开展示入口：https://resume-analyzer-jing845.goldenrice257.chatgpt.site
+公开展示入口：https://jing845.github.io/-resume-analyzer/
 
-独立展示页用于简历链接入口，展示预置样例与产品说明。Streamlit 页面承担实时模型分析。展示页不嵌入或暴露密钥，也不把预置结果冒充实时生成。
+GitHub Pages 独立展示页用于简历链接入口，展示预置样例与产品说明。Streamlit 页面承担实时模型分析。展示页不嵌入或暴露密钥，也不把预置结果冒充实时生成。
 
 Streamlit Community Cloud 仍可能休眠，展示页不改变其运行限制。免费服务没有全天候可用性的保证。示例无模型调用；真实评估仍按硅基流动账户的实际用量及规则计费。
 
