@@ -1,383 +1,144 @@
-# app.py
+"""AI resume evidence assistant — example first, live analysis on demand."""
+import hashlib
+import html
+import json
+from pathlib import Path
+
 import streamlit as st
-import pdfplumber
-from docx import Document
-from openai import OpenAI
-from config import API_KEY, BASE_URL, MODEL
-import io
 
-# ============================================================
-# 页面配置
-# ============================================================
-st.set_page_config(
-    page_title="AI 简历评估助手",
-    page_icon="📋",
-    layout="wide"
-)
+from config import get_settings
+from core import STATUS_LABELS, UserError, analyze, extract_text, report_markdown, rewrite
 
-# 初始化 AI 客户端
-client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
+st.set_page_config(page_title="简历诊断助手", page_icon="📄", layout="wide")
+SAMPLES = json.loads(Path(__file__).with_name("samples.json").read_text(encoding="utf-8"))
 
-# ============================================================
-# 样式美化
-# ============================================================
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: 700;
-        color: #1E3A5F;
-        text-align: center;
-        padding: 1rem 0;
-        border-bottom: 3px solid #4A90D9;
-        margin-bottom: 2rem;
-    }
-    .score-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 2rem;
-        border-radius: 16px;
-        text-align: center;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-    }
-    .score-number {
-        font-size: 4rem;
-        font-weight: 800;
-    }
-    .metric-card {
-        background: #F8FAFC;
-        padding: 1.5rem;
-        border-radius: 12px;
-        border-left: 4px solid #4A90D9;
-        margin: 0.5rem 0;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        padding: 10px 20px;
-        border-radius: 8px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# ============================================================
-# 辅助函数
-# ============================================================
-def parse_pdf(file_bytes):
-    """读取 PDF 文件内容"""
-    text = ""
-    try:
-        import pdfplumber
-        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-            for page in pdf.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text + "\n"
-    except ImportError:
-        import PyPDF2
-        reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
-        for page in reader.pages:
-            text += page.extract_text() + "\n"
-    return text.strip()
-
-def parse_docx(file_bytes):
-    """读取 Word 文件内容"""
-    doc = Document(io.BytesIO(file_bytes))
-    return "\n".join([p.text for p in doc.paragraphs]).strip()
-
-def extract_text(uploaded_file):
-    """根据文件类型提取文本"""
-    suffix = uploaded_file.name.lower().split('.')[-1]
-    file_bytes = uploaded_file.getvalue()
-    
-    if suffix == 'pdf':
-        return parse_pdf(file_bytes)
-    elif suffix in ('doc', 'docx'):
-        return parse_docx(file_bytes)
-    elif suffix == 'txt':
-        return file_bytes.decode('utf-8', errors='ignore')
-    else:
-        st.error(f"暂不支持 {suffix} 格式，请上传 PDF、Word 或 TXT 文件")
-        return None
-
-def call_llm(prompt, system_prompt="你是一位专业的产品经理和简历评估专家。"):
-    """调用 LLM"""
-    try:
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,
-            max_tokens=2000
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"❌ 调用失败: {str(e)}\n\n请检查：1) API Key 是否正确 2) 网络连接 3) API 余额是否充足"
-
-def analyze_resume(resume_text, jd_text):
-    """分析简历与 JD 的匹配度"""
-    system_prompt = """你是一位资深 HR 和产品经理，擅长简历筛选和人才评估。
-请从以下维度进行专业分析：
-1. 整体匹配度评分（0-100分）
-2. 关键词匹配率
-3. 经验相关性评估
-4. 技能差距分析
-5. 改进建议（具体、可操作）
-6. 给 HR 的一句话推荐语"""
-
-    prompt = f"""
-## 简历内容：
-{resume_text}
-
-## 目标岗位 JD：
-{jd_text}
-
-请按以下 JSON 格式输出（确保是合法的 JSON）：
-{{
-    "overall_score": 分数(0-100),
-    "keyword_match_rate": "匹配率描述",
-    "experience_analysis": "经验相关性分析",
-    "skills_gap": ["差距1", "差距2"],
-    "suggestions": ["建议1", "建议2", "建议3"],
-    "hr_comment": "一句话推荐语"
-}}
-"""
-    return call_llm(prompt, system_prompt)
+st.markdown("""<style>
+.stApp{background:#f7f7f2;color:#202b34} .block-container{max-width:1120px;padding-top:2.4rem}
+h1,h2,h3{letter-spacing:-.035em} .eyebrow{color:#3157d7;font-size:.82rem;letter-spacing:.12em;margin-bottom:.7rem}
+.intro{max-width:680px;color:#58646b;line-height:1.8;margin-bottom:1.4rem}
+.evidence{padding:14px 18px;background:#edf0f6;border-left:3px solid #3157d7;border-radius:4px;line-height:1.8}
+.stButton>button[kind=primary]{background:#3157d7;border-color:#3157d7;border-radius:8px}
+[data-testid=stMetric]{background:#fff;padding:16px;border:1px solid #e1e4e6;border-radius:10px}
+@media(max-width:600px){.block-container{padding:1.2rem}h1{font-size:2rem!important}}
+</style>""", unsafe_allow_html=True)
+st.markdown('<div class="eyebrow">AI 简历诊断 · 个人产品项目</div>', unsafe_allow_html=True)
+st.title("看清岗位要求，写好真实经历。")
+st.markdown('<div class="intro">把简历与目标岗位放在一起，逐条查看对应证据、待补信息与改写建议。先查看示例，也可以直接粘贴自己的简历开始评估。</div>', unsafe_allow_html=True)
 
 
-def rewrite_resume(resume_text, jd_text):
-    """根据JD优化简历"""
-
-    system_prompt = """你是一位资深求职顾问，擅长优化简历。
-你的任务是：
-1. 保留真实经历
-2. 提升表达质量
-3. 强化与JD的匹配度
-4. 使用更专业、有说服力的表达"""
-
-    prompt = f"""
-请根据目标岗位优化这份简历：
-
-【原始简历】
-{resume_text}
-
-【目标岗位JD】
-{jd_text}
-
-请输出：
-1. 优化后的简历（结构清晰、表达专业）
-2. 标注你优化了哪些地方（简要说明）
-
-要求：
-- 不要编造经历
-- 用更强的动词（如“负责”→“主导”）
-- 强调与岗位相关的能力
-"""
-
-    return call_llm(prompt, system_prompt)
-    """分析简历与 JD 的匹配度"""
-    system_prompt = """你是一位资深 HR 和产品经理，擅长简历筛选和人才评估。
-请从以下维度进行专业分析：
-1. 整体匹配度评分（0-100分）
-2. 关键词匹配率
-3. 经验相关性评估
-4. 技能差距分析
-5. 改进建议（具体、可操作）
-6. 给 HR 的一句话推荐语"""
-
-    prompt = f"""
-## 简历内容：
-{resume_text}
-
-## 目标岗位 JD：
-{jd_text}
-
-请按以下 JSON 格式输出（确保是合法的 JSON）：
-{{
-    "overall_score": 分数(0-100),
-    "keyword_match_rate": "匹配率描述",
-    "experience_analysis": "经验相关性分析",
-    "skills_gap": ["差距1", "差距2"],
-    "suggestions": ["建议1", "建议2", "建议3"],
-    "hr_comment": "一句话推荐语"
-}}
-"""
-    return call_llm(prompt, system_prompt)
-
-def parse_analysis_result(result_text):
-    """解析 LLM 返回的结果"""
-    import json, re
-    # 尝试提取 JSON
-    json_match = re.search(r'\{[\s\S]*\}', result_text)
-    if json_match:
-        try:
-            return json.loads(json_match.group())
-        except:
-            pass
-    return None
-
-def display_score_gauge(score_str):
-    """提取数字分数并显示"""
-    import re
-    match = re.search(r'\d+', str(score_str))
-    if match:
-        return int(match.group())
-    return 0
-
-# ============================================================
-# 主界面
-# ============================================================
-st.markdown('<div class="main-header">📋 AI 简历评估助手</div>', unsafe_allow_html=True)
-
-# 顶部说明
-st.markdown("""
-<div style="text-align:center; color: #666; margin-bottom: 2rem;">
-上传简历 + 粘贴岗位 JD → AI 智能分析匹配度 + 给出改进建议
-</div>
-""", unsafe_allow_html=True)
-
-# 输入区域 - 左右分栏
-col1, col2 = st.columns([1, 1], gap="large")
-
-with col1:
-    st.markdown("### 📄 上传简历")
-    st.caption("支持 PDF、Word(.docx)、TXT 格式")
-    uploaded_file = st.file_uploader(
-        "拖拽或点击上传简历",
-        type=['pdf', 'docx', 'doc', 'txt'],
-        label_visibility="collapsed"
-    )
-    
-    if uploaded_file:
-        st.success(f"✅ 已上传: {uploaded_file.name}")
-        with st.spinner("正在解析简历..."):
-            resume_text = extract_text(uploaded_file)
-        if resume_text:
-            with st.expander("📖 查看简历内容"):
-                st.text_area("简历全文", resume_text, height=250, label_visibility="collapsed", disabled=True)
-
-with col2:
-    st.markdown("### 💼 粘贴岗位 JD")
-    st.caption("复制粘贴目标岗位的完整描述")
-    jd_text = st.text_area(
-        "输入岗位描述",
-        placeholder="粘贴岗位 JD...\n\n例如：\n- 岗位：产品经理\n- 要求：3年以上经验，熟悉数据分析工具\n- 加分项：有 AI 产品经验",
-        height=257,
-        label_visibility="collapsed"
-    )
-
-# 评估按钮
-st.divider()
-analyze_col1, analyze_col2, analyze_col3 = st.columns([1, 2, 1])
-with analyze_col2:
-    analyze_button = st.button("🚀 开始评估", type="primary", use_container_width=True)
-
-# ============================================================
-# 分析结果展示
-st.divider()
-
-if st.button("✨ 一键优化简历", use_container_width=True):
-    with st.spinner("🤖 正在帮你优化简历..."):
-        new_resume = rewrite_resume(resume_text, jd_text)
-    
-    st.success("✅ 优化完成！")
-    
-    st.markdown("### ✨ 优化后的简历")
-    st.text_area("结果", new_resume, height=400)
-# ============================================================
-if analyze_button:
-    if not uploaded_file:
-        st.warning("⚠️ 请先上传简历文件")
-    elif not jd_text.strip():
-        st.warning("⚠️ 请粘贴岗位 JD 内容")
-    elif not resume_text:
-        st.error("❌ 简历解析失败，请尝试上传 TXT 格式的简历")
-    else:
-        with st.spinner("🤖 AI 正在分析中，请稍候..."):
-            result = analyze_resume(resume_text, jd_text)
-        
-        st.success("✅ 分析完成！")
-        parsed = parse_analysis_result(result)
-        
-        if parsed:
-            # ---- 大分数展示 ----
-            score = parsed.get("overall_score", display_score_gauge(result))
-            
-            # 根据分数选择颜色
-            if score >= 80:
-                score_color = "#22C55E"
-                score_label = "🌟 高度匹配"
-            elif score >= 60:
-                score_color = "#F59E0B"
-                score_label = "👍 较好匹配"
+def render_report(report, prefix):
+    st.markdown(report["summary"])
+    rows = report["requirements"]
+    cols = st.columns(3)
+    for col, status in zip(cols, ("matched", "partial", "not_shown")):
+        col.metric(STATUS_LABELS[status], sum(row["status"] == status for row in rows))
+    st.caption("以上为岗位要求条数，不是录用概率。未体现不等于不具备；有引用也需结合上下文人工核对。")
+    if any(row["status"] == "verify" for row in rows):
+        st.warning("部分引用未在原文定位，已标记待核对，未计入已体现数量。")
+    for index, row in enumerate(rows):
+        label = "加分项" if row["kind"] == "preferred" else "岗位要求"
+        with st.expander(f'{STATUS_LABELS[row["status"]]} · {row["requirement"]}', expanded=index == 0):
+            st.caption(label + " · " + row["priority"])
+            st.markdown("**简历依据**")
+            if row["evidence"]:
+                st.markdown('<div class="evidence">' + html.escape(row["evidence"]) + '</div>', unsafe_allow_html=True)
             else:
-                score_color = "#EF4444"
-                score_label = "⚠️ 匹配度待提升"
-            
-            st.markdown(f"""
-            <div class="score-card">
-                <div class="score-number" style="color: white;">{score}</div>
-                <div style="font-size: 1.5rem; margin-top: 0.5rem;">分</div>
-                <div style="margin-top: 1rem; font-size: 1.2rem;">{score_label}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.divider()
-            
-            # ---- 详细分析 Tab ----
-            tab1, tab2, tab3 = st.tabs(["📊 匹配分析", "💡 改进建议", "📝 完整报告"])
-            
-            with tab1:
-                col_km, col_ea = st.columns(2)
-                with col_km:
-                    st.markdown("#### 🔑 关键词匹配")
-                    st.info(parsed.get("keyword_match_rate", "数据解析中..."))
-                with col_ea:
-                    st.markdown("#### 📈 经验相关性")
-                    st.info(parsed.get("experience_analysis", "数据解析中..."))
-                
-                skills_gap = parsed.get("skills_gap", [])
-                if skills_gap:
-                    st.markdown("#### ⚡ 技能差距")
-                    for skill in skills_gap:
-                        st.markdown(f"- 🔸 {skill}")
-            
-            with tab2:
-                st.markdown("#### 🎯 可操作的改进建议")
-                suggestions = parsed.get("suggestions", [])
-                if suggestions:
-                    for i, s in enumerate(suggestions, 1):
-                        st.markdown(f"""
-                        <div class="metric-card">
-                            <strong>建议 {i}:</strong> {s}
-                        </div>
-                        """, unsafe_allow_html=True)
-                else:
-                    st.info("暂无具体建议")
-            
-            with tab3:
-                st.markdown("#### 📋 HR 推荐语")
-                st.markdown(f"""
-                > {parsed.get("hr_comment", "暂无推荐语")}
-                """)
-                
-                st.markdown("#### 🔍 原始分析结果")
-                st.text(result)
-        else:
-            # JSON 解析失败，直接展示原始文本
-            st.markdown("#### 🔍 分析结果")
-            st.markdown(result)
+                st.caption("没有定位到对应原文。")
+            st.markdown("**判断**　" + row["reason"])
+            st.markdown("**下一步**　" + row["action"])
+    if report.get("questions"):
+        st.markdown("#### 你可以补充的信息")
+        for question in report["questions"]:
+            st.markdown("- " + question)
+    st.download_button("下载核对报告", report_markdown(report), file_name="简历岗位核对报告.md", mime="text/markdown", key=prefix + "_download")
 
-# ============================================================
-# 底部信息
-# ============================================================
+
+example_tab, live_tab, about_tab = st.tabs(["先看示例", "评估我的简历", "项目说明"])
+with example_tab:
+    st.caption(SAMPLES["notice"] + "。此处不调用模型，方便直接查看产品流程。")
+    title = st.radio("选择目标岗位", [job["title"] for job in SAMPLES["jobs"]], horizontal=True, key="sample_job")
+    job = next(item for item in SAMPLES["jobs"] if item["title"] == title)
+    with st.expander("查看虚构简历与岗位要求"):
+        st.text(SAMPLES["resume"])
+        st.markdown("**目标岗位**")
+        st.write(job["jd"])
+    render_report(job["report"], "sample_" + job["id"])
+    st.markdown("#### 一段真实边界内的表达优化")
+    left, right = st.columns(2)
+    left.markdown("**原表达**")
+    left.write(SAMPLES["rewrite"]["original"])
+    right.markdown("**改写示例**")
+    right.write(SAMPLES["rewrite"]["revised"])
+    st.caption(SAMPLES["rewrite"]["reason"])
+
+with live_tab:
+    st.info("实时分析会将你提交的简历文本和 JD 发送给硅基流动模型服务。建议先去掉电话、邮箱及其他不相关个人信息。本应用不主动写入简历数据库。")
+    mode = st.radio("简历输入方式", ["粘贴文本", "上传文件"], horizontal=True)
+    resume = ""
+    if mode == "粘贴文本":
+        resume = st.text_area("简历内容", height=240, max_chars=18000, placeholder="粘贴教育、经历与技能等内容……", key="resume_input")
+    else:
+        upload = st.file_uploader("上传简历（不超过 5 MB）", type=["pdf", "docx", "txt", "doc"], help="支持文字型 PDF、DOCX 和 TXT。旧版 DOC 会提示转换，不会进入分析。")
+        st.caption("支持文字型 PDF、DOCX、TXT。旧版 DOC 需另存；扫描件暂不支持。")
+        if upload:
+            try:
+                resume = extract_text(upload.name, upload.getvalue())
+                with st.expander("检查提取的文字", expanded=True):
+                    st.text_area("解析结果（请检查是否缺字或顺序异常）", resume, height=180, disabled=True, key="parsed_preview")
+            except UserError as error:
+                st.warning(str(error))
+    jd = st.text_area("目标岗位 JD", height=180, max_chars=10000, placeholder="粘贴岗位职责、任职要求及加分项……", key="jd_input")
+    consent = st.checkbox("我同意将上述文本发送至硅基流动以生成分析。", key="model_consent")
+    fingerprint = hashlib.sha256((resume + "\x00" + jd).encode()).hexdigest()
+    if st.session_state.get("live_fingerprint") != fingerprint:
+        st.session_state["live_fingerprint"] = fingerprint
+        st.session_state.pop("live_report", None)
+        st.session_state.pop("live_rewrites", None)
+    if st.button("开始核对岗位证据", type="primary", use_container_width=True):
+        if not consent:
+            st.warning("请先确认是否同意发送上述文本。也可直接查看示例，无需提交材料。")
+        else:
+            try:
+                with st.spinner("正在拆解岗位要求并核对简历证据，请稍候……"):
+                    report = analyze(get_settings(), resume, jd)
+                st.session_state["live_report"] = report
+                st.session_state.pop("live_rewrites", None)
+                st.success("核对完成，请逐条检查依据。")
+            except UserError as error:
+                st.error(str(error))
+    if st.session_state.get("live_report"):
+        render_report(st.session_state["live_report"], "live")
+        st.divider()
+        st.markdown("#### 核对事实后，再改善表达")
+        st.caption("先补全真实信息。下面只调整已有表达；数字和职责检查是辅助规则，结果仍需你确认。")
+        if st.button("生成逐段改写建议", use_container_width=True):
+            if not consent:
+                st.warning("请先确认是否同意将文本发送给模型服务。")
+            else:
+                try:
+                    with st.spinner("正在对照原文生成保守改写……"):
+                        st.session_state["live_rewrites"] = rewrite(get_settings(), resume, jd)
+                except UserError as error:
+                    st.error(str(error))
+        for index, change in enumerate(st.session_state.get("live_rewrites", []), 1):
+            st.markdown(f"**建议 {index}**")
+            before, after = st.columns(2)
+            before.markdown("原文")
+            before.write(change["original"])
+            after.markdown("建议表达")
+            after.write(change["revised"])
+            st.caption(change["reason"])
+            for note in change["checks"]:
+                st.warning(note)
+            st.checkbox("我已核对这一段的角色、数字和事实。", key=f"confirm_{fingerprint}_{index}")
+
+with about_tab:
+    st.markdown("### 从一个分数，走向可检查的依据")
+    st.write("求职者需要知道哪里有证据、哪里需要补充，以及下一步能怎么改。这个版本将 JD 拆成要求，对照简历原文，再给出行动建议；不预测录用概率。")
+    st.markdown("**已实现**：虚构样例体验、文本／文件输入、逐条证据核对、引用定位检查、逐段表达建议、结果下载和失败提示。")
+    st.markdown("**边界**：模型可能漏判或误判；引用定位仅检查原文是否存在，不能证明解释正确。扫描件暂不支持。示例是预置内容，实时评估在明确提交后调用服务。")
+    st.markdown("**后续验证**：用不同岗位和简历测试证据引用、缺失信息识别及改写事实保持情况，保留真实案例后再报告效果。")
+
 st.divider()
-st.markdown("""
-<div style="text-align:center; color: #999; font-size: 0.85rem; margin-top: 2rem;">
-Made with ❤️ by PM · Built with Streamlit + AI · 
-<a href="https://github.com" target="_blank">GitHub</a>
-</div>
-""", unsafe_allow_html=True)
+st.caption("个人产品项目 · 本工具用于求职材料梳理，不代替招聘决定。")
+st.markdown("[查看项目源码](https://github.com/jing845/-resume-analyzer)")

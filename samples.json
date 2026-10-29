@@ -1,0 +1,62 @@
+{
+  "notice": "虚构样例 · 预置分析，非实时模型结果",
+  "resume": "求职意向：产品实习生\n教育背景：某大学，信息管理专业，本科在读，2027 年毕业。\n实习经历：某校园服务平台，产品实习生，2026 年 3 月至 6 月。在导师指导下，参与校园活动报名流程优化。访谈 8 位同学，整理报名步骤过多、状态提示不清楚的问题；绘制流程图、撰写需求文档，跟进研发测试。未独立负责上线，未获得上线后的转化数据。\n课程项目：使用 Excel 整理 120 份问卷，输出描述性统计和图表。\n技能：Excel、Axure，了解 SQL 基础，尚无独立 SQL 分析经验。\n到岗：每周 4 天，可实习 3 个月。\n尚无大模型调用、广告竞价、商业化定价的实际项目经验。",
+  "jobs": [
+    {
+      "id": "business",
+      "title": "B 端／商业化产品实习生",
+      "short_title": "B 端／商业化",
+      "jd": "参与商户广告投放及订单结算流程优化，开展用户访谈并撰写需求文档；能独立使用 SQL 分析转化漏斗；有 B 端或商业化业务经验；每周到岗 4 天、持续 3 个月；大模型应用实践为加分项。",
+      "report": {
+        "summary": "需求梳理与执行支持已有依据；SQL 独立分析和商业化场景经验仍需补足。优先把可迁移的产品流程能力讲具体，避免用改写替代真实经验。",
+        "requirements": [
+          {"requirement": "开展用户访谈并撰写需求文档", "kind": "required", "status": "matched", "evidence": "访谈 8 位同学，整理报名步骤过多、状态提示不清楚的问题；绘制流程图、撰写需求文档，跟进研发测试。", "reason": "存在访谈、问题整理、需求输出及测试跟进的具体动作。", "action": "补充一次从用户反馈到需求取舍的真实案例。", "priority": "P1"},
+          {"requirement": "独立使用 SQL 分析转化漏斗", "kind": "required", "status": "partial", "evidence": "了解 SQL 基础，尚无独立 SQL 分析经验。", "reason": "具备基础认知，但尚未证明独立分析能力。", "action": "完成真实的漏斗分析练习后再补充项目证据，不把基础技能改写为熟练。", "priority": "P0"},
+          {"requirement": "B 端或商业化业务经验", "kind": "required", "status": "not_shown", "evidence": "", "reason": "校园服务经历没有体现商户、广告、定价或结算场景。未体现不等于无法胜任。", "action": "如有遗漏的相关经历可补充；若没有，面试中解释流程分析能力如何迁移。", "priority": "P0"},
+          {"requirement": "每周 4 天，持续 3 个月", "kind": "required", "status": "matched", "evidence": "每周 4 天，可实习 3 个月。", "reason": "到岗条件与本条要求一致。", "action": "投递前确认日期仍然有效。", "priority": "P1"},
+          {"requirement": "有大模型应用实践", "kind": "preferred", "status": "not_shown", "evidence": "", "reason": "样例明确尚无大模型调用实践，这是加分项。", "action": "后续完成可演示的小项目，并记录实际测试与迭代，不虚构上线效果。", "priority": "P2"}
+        ],
+        "questions": ["能否补充一次报名流程优化中的需求取舍？", "是否有未写入简历的商户、广告或结算经历？"]
+      }
+    },
+    {
+      "id": "consumer",
+      "title": "C 端用户产品实习生",
+      "short_title": "C 端用户产品",
+      "jd": "开展用户研究，参与用户流程与原型设计；具备基础数据分析能力；熟悉产品设计工具；能说明需求上线后的效果；每周到岗 4 天，至少实习 3 个月。",
+      "report": {
+        "summary": "用户访谈、流程设计及工具使用有对应证据；数据分析深度和上线效果需要如实说明。相同经历在这个岗位下的关联更直接。",
+        "requirements": [
+          {"requirement": "开展用户研究", "kind": "required", "status": "matched", "evidence": "访谈 8 位同学，整理报名步骤过多、状态提示不清楚的问题", "reason": "有具体研究对象、动作及问题发现。", "action": "说明访谈如何影响需求优先级。", "priority": "P1"},
+          {"requirement": "流程设计及产品工具使用", "kind": "required", "status": "matched", "evidence": "绘制流程图、撰写需求文档，跟进研发测试。", "reason": "体现从需求到交付支持的实际动作。", "action": "准备一张脱敏流程图解释修改前后差异。", "priority": "P1"},
+          {"requirement": "基础数据分析能力", "kind": "required", "status": "partial", "evidence": "使用 Excel 整理 120 份问卷，输出描述性统计和图表。", "reason": "已有描述性分析经验，尚未体现行为数据或业务指标分析。", "action": "解释选了什么指标、得到什么结论，不扩大为复杂增长分析。", "priority": "P1"},
+          {"requirement": "说明需求上线后的效果", "kind": "required", "status": "not_shown", "evidence": "", "reason": "样例没有获得上线后的转化数据。", "action": "说明实际参与到的阶段；可以补充验收思路，不能新增转化提升数字。", "priority": "P0"},
+          {"requirement": "每周 4 天，至少 3 个月", "kind": "required", "status": "matched", "evidence": "每周 4 天，可实习 3 个月。", "reason": "满足样例岗位到岗条件。", "action": "投递前确认实际可到岗时间。", "priority": "P1"}
+        ],
+        "questions": ["你根据什么决定先改报名步骤还是状态提示？", "哪些验收工作由你实际完成？"]
+      }
+    },
+    {
+      "id": "ai",
+      "title": "AI 应用产品实习生",
+      "short_title": "AI 应用产品",
+      "jd": "有真实的大模型应用实践，能设计并迭代提示词，了解输出质量评估；能梳理用户需求及产品流程；具备基础数据分析能力；每周到岗 4 天并实习 3 个月。",
+      "report": {
+        "summary": "产品流程能力可迁移，但样例未提供模型调用和评测实践。需要用实际完成的项目补足证据，而不只是增加 AI 关键词。",
+        "requirements": [
+          {"requirement": "真实的大模型应用实践", "kind": "required", "status": "not_shown", "evidence": "", "reason": "样例明确尚无大模型调用实践。", "action": "完成一条可演示的真实流程，记录输入、输出、失败和改进。", "priority": "P0"},
+          {"requirement": "提示词迭代和输出质量评估", "kind": "required", "status": "not_shown", "evidence": "", "reason": "未提供提示词版本、测试案例或质量判断依据。", "action": "围绕一个小场景建立测试集，保留修改前后的实际结果。", "priority": "P0"},
+          {"requirement": "梳理用户需求及产品流程", "kind": "required", "status": "matched", "evidence": "绘制流程图、撰写需求文档，跟进研发测试。", "reason": "具备可迁移的产品执行基础。", "action": "进一步说明 AI 流程里的人工确认和异常处理。", "priority": "P1"},
+          {"requirement": "基础数据分析能力", "kind": "required", "status": "partial", "evidence": "使用 Excel 整理 120 份问卷，输出描述性统计和图表。", "reason": "有基础分析实践，但尚未体现模型评估或业务数据分析。", "action": "区分已有技能和计划学习的技能。", "priority": "P1"},
+          {"requirement": "每周 4 天，持续 3 个月", "kind": "required", "status": "matched", "evidence": "每周 4 天，可实习 3 个月。", "reason": "满足样例岗位到岗条件。", "action": "投递前确认可到岗时间。", "priority": "P1"}
+        ],
+        "questions": ["是否有尚未写入简历、但已完成的 AI 应用？", "能否提供一次真实失败案例及修复过程？"]
+      }
+    }
+  ],
+  "rewrite": {
+    "original": "在导师指导下，参与校园活动报名流程优化。访谈 8 位同学，整理报名步骤过多、状态提示不清楚的问题；绘制流程图、撰写需求文档，跟进研发测试。",
+    "revised": "在导师指导下参与校园活动报名流程优化：通过访谈 8 位同学，归纳报名步骤与状态提示问题，输出流程图和需求文档，并跟进研发测试。",
+    "reason": "按背景、动作与交付重新组织表达，保留参与角色、访谈数量和实际执行阶段，没有新增上线效果。"
+  }
+}
