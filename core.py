@@ -9,7 +9,7 @@ import zipfile
 MAX_BYTES = 5 * 1024 * 1024
 MAX_CHARS = 18000
 MAX_PAGES = 15
-STATUS_LABELS = {"matched": "已体现", "partial": "需补充", "not_shown": "未体现", "verify": "待核对"}
+STATUS_LABELS = {"matched": "已体现", "partial": "需补充", "not_shown": "未体现", "verify": "待核对", "mismatch": "条件不符"}
 
 
 class UserError(Exception):
@@ -107,6 +107,85 @@ def parse_json(text):
     raise UserError("本次返回格式未通过检查，请重试；你的输入仍会保留。")
 
 
+def graduation_fact(resume):
+    """Only infer a year from an unambiguous highest-degree education line."""
+    candidates = []
+    for line in resume.splitlines():
+        rank = 3 if '博士' in line else 2 if re.search('硕士|研究生', line) else 1 if re.search('本科|学士', line) else 0
+        if not rank:
+            continue
+        ranges = re.findall(r'((?:19|20)\d{2})(?:[-./年](?:0?[1-9]|1[0-2])月?)?\s*[-—–~～至到]+\s*((?:19|20)\d{2})', line)
+        years = {int(end) for start, end in ranges if int(start) < int(end)}
+        years.update(int(y) for y in re.findall(r'((?:19|20)\d{2})年(?:\d{1,2}月)?\s*毕业', line))
+        if re.search(r'退学|肄业|休学|延期|辍学|未取得', line):
+            years = set()
+        candidates.append((rank, years, line.strip()))
+    if not candidates:
+        return None
+    highest = max(rank for rank, _, _ in candidates)
+    top = [item for item in candidates if item[0] == highest]
+    if any(len(years) != 1 for _, years, _ in top):
+        return None
+    years = set().union(*(years for _, years, _ in top))
+    return (next(iter(years)), top[0][2]) if len(years) == 1 else None
+
+
+def target_cohorts(text):
+    years = set()
+    for clause in re.findall(r'(?<!\d)(?:20\d{2}|\d{2})(?:\s*[/／、或及和—–~-]\s*(?:20\d{2}|\d{2}))*\s*届', text):
+        values = [int(y) if len(y) == 4 else 2000 + int(y) for y in re.findall(r'20\d{2}|\d{2}', clause)]
+        if len(values) == 2 and re.search(r'[—–~-]', clause) and 0 <= values[1] - values[0] <= 4:
+            years.update(range(values[0], values[1] + 1))
+        else:
+            years.update(values)
+    return years
+
+
+def apply_fact_checks(rows, resume):
+    changed = False
+    graduation = graduation_fact(resume)
+    for row in rows:
+        if row['status'] == 'verify':
+            continue
+        requirement = row['requirement']
+        targets = target_cohorts(requirement) if '届' in requirement else set()
+        compatible_degree = graduation is not None and all(word not in requirement or word in graduation[1] for word in ('博士', '硕士', '本科'))
+        if targets and graduation and compatible_degree and not re.search(r'专业|经验|能力|实习|熟悉|掌握', requirement):
+            year, quote = graduation
+            row.update(evidence=quote, evidence_quotes=[quote])
+            if year in targets:
+                row.update(status='matched', reason=f'按这段学历起止时间，预计毕业年份为{year}年，对应{str(year)[-2:]}届；与本条届别一致。最终以实际毕业时间为准。', action='无需额外堆砌届别关键词，保持学历时间清楚即可。')
+            else:
+                row.update(status='mismatch', reason=f'按这段学历时间，预计毕业年份为{year}年；本条要求为' + '、'.join(map(str, sorted(targets))) + '届，年份不一致。', action='核对预计毕业时间及招聘届别，确认该岗位是否接受你的毕业年份。')
+            changed = True
+        # Recognize concrete cross-team actions, rather than requiring a self-rating.
+        if re.search(r'沟通|协调', requirement) and not re.search(r'主导|独立|谈判|高层|冲突|大型|成果|业绩|提升', requirement) and len(requirement) <= 35:
+            for quote in row.get('evidence_quotes', []):
+                for clause in re.split(r'[。；;\n]', quote):
+                    action = re.search(r'组织.{0,50}(?:对齐|讨论|评审)|协调.{0,30}(?:依赖|资源|测试)|跨部门.{0,30}(?:推进|对接)', clause)
+                    teams = set(re.findall(r'产品|研发|开发|运营|设计|测试|销售|市场', clause))
+                    if action and len(teams) >= 2 and not re.search(r'未|没有|未能|尚未|不曾|不负责|不参与', clause[max(0, action.start()-6):action.start()]):
+                        row.update(status='matched', reason='原文已经描述多个职能之间的需求对齐或协调推进动作，可作为本条沟通协调要求的行为依据；不需要额外写“沟通能力强”。这些动作不自动证明独立主导。', action='保留具体协调动作；如需增强说服力，可补充处理的一次分歧或依赖问题，不必重复能力口号。')
+                        changed = True
+                        break
+        # Historical internship dates do not establish future availability.
+        if re.search(r'可.{0,8}(?:实习|到岗)|连续实习', requirement) and re.search(r'\d+\s*个?月', requirement):
+            availability = re.search(r'(?:可|能|计划|保证|至少|每周|到岗).{0,20}(?:实习|到岗|连续).{0,12}\d+\s*个?月|(?:可实习|可到岗)\s*\d+\s*个?月', resume)
+            if not availability:
+                row.update(status='partial', evidence='', evidence_quotes=[], reason='简历未说明未来可以连续实习的总时长。过去某段实习的起止日期，不能用来判定今后的可到岗时长。', action='补充实际可到岗的起止时间或连续实习月数，不能据此直接判断不满足。')
+                changed = True
+    return changed
+
+
+def grounded_summary(rows):
+    parts = []
+    for status, label in [('matched', '已有依据'), ('partial', '仍需补充'), ('mismatch', '条件不符'), ('not_shown', '材料暂未体现'), ('verify', '需要核对')]:
+        titles = [row['requirement'] for row in rows if row['status'] == status]
+        if titles:
+            parts.append(label + '：' + '；'.join(titles))
+    return '。'.join(parts) + '。'
+
+
 def normalize_report(data, resume, jd=None):
     rows = data.get("requirements")
     if not isinstance(rows, list) or not rows or len(rows) > 20:
@@ -151,13 +230,16 @@ def normalize_report(data, resume, jd=None):
         if jd is not None and not contains_quote(jd, normalized[-1]["jd_evidence"]):
             normalized[-1]["status"] = "verify"
             normalized[-1]["reason"] = "这条要求未对应到岗位原文，请核对是否为岗位条件。" + normalized[-1]["reason"]
+    facts_changed = apply_fact_checks(normalized, resume) if jd is not None else False
     uncertain = any(row["status"] == "verify" for row in normalized)
     summary = str(data.get("summary", "请逐条核对以下岗位要求。"))[:1600]
     if uncertain:
         summary = "部分判断的原文依据未通过检查，请先核对标记为“待核对”的条目。"
+    elif facts_changed:
+        summary = grounded_summary(normalized)
     return {"summary": summary,
             "requirements": normalized,
-            "questions": [str(q)[:600] for q in data.get("questions", [])[:5]] if isinstance(data.get("questions", []), list) else []}
+            "questions": ([row['action'] for row in normalized if row['status'] in ('partial', 'mismatch', 'verify')][:5] if facts_changed else [str(q)[:600] for q in data.get("questions", [])[:5]] if isinstance(data.get("questions", []), list) else [])}
 
 
 SYSTEM = """你是服务求职者的简历诊断助手。分析材料中的证据，不预测录用概率。
