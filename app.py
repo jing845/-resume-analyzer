@@ -125,5 +125,6 @@ if st.session_state.get("live_report"):
 
 st.caption("AI 结果仅供参考，请核对事实。")
 with st.expander("关于项目"):
+    st.caption("当前分析模型：" + get_settings()[2])
     st.write("个人 AI 产品项目：将岗位要求与简历原文逐条对照，指出缺少的依据，并给出修改建议。引用定位与改写检查为辅助规则，不能替代人工判断。")
     st.markdown("[查看项目源码](https://github.com/jing845/-resume-analyzer)")
